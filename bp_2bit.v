@@ -48,7 +48,7 @@ module bp_2bit(clk, reset, branch, state);
         STRONG_TAKEN: begin
             state = 1;
             if (branch == 1) ProxEst = STRONG_TAKEN;
-            else ProxEst = WEAK_NOT_TAKEN;
+            else ProxEst = WEAK_TAKEN;
         end
     endcase
 
