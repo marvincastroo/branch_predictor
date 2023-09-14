@@ -868,12 +868,15 @@ reg branch_inst;
 reg [31:0] error;
 reg [31:0] total_branch;
 
+reg history_bit;
+
 always @(posedge clk_i) begin
   if (reset_i) begin
     predictor = 0;
     branch_result = 0;
     branch_inst = 0;
     total_branch = 0;
+    history_bit = 0; 
     end
   else begin
     branch_result <= branch_taken_w;
@@ -882,6 +885,12 @@ always @(posedge clk_i) begin
     total_branch = (branch_inst) ? total_branch+1 : total_branch;
     end
 end
+
+always @(posedge branch_inst) begin
+  if (branch_result) history_bit = 1;
+  if (!branch_result) history_bit = 0;
+end 
+
 
 always @(posedge predictor or negedge predictor) begin
    if (reset_i) begin
@@ -896,7 +905,11 @@ wire branch = (BR_JUMP == id_branch_r) | (BR_EQ   == id_branch_r) | (BR_NE   == 
 
 wire predictor_2b;
 
+wire predictor_2b_hist;
+
 bp_2bit two_bit_predictor (.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .state(predictor_2b));
+
+bp_2bit_history two_bp_history (.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .history(history_bit), .state(predictor_2b_hist));
 
 endmodule
 
@@ -960,6 +973,103 @@ module bp_2bit(clk, reset, branch, branch_result, state);
 endmodule
 
          
-    
+module bp_2bit_history(clk, reset, branch, branch_result, history, state);
+    input clk, reset, branch, branch_result, history;
+    output reg state;
+
+    reg [3:0] EstPres1, ProxEst1, EstPres2, ProxEst2;
+
+    parameter WEAK_NOT_TAKEN = 3'b000;
+    parameter WEAK_TAKEN = 3'b001;
+    parameter STRONG_NOT_TAKEN = 3'b010;
+    parameter STRONG_TAKEN = 3'b100;
+
+    always @(posedge clk) begin
+        
+        if (reset) begin
+            state <= 0;
+            EstPres1 <= WEAK_NOT_TAKEN;
+            ProxEst1 <= WEAK_NOT_TAKEN;
+            EstPres2 <= WEAK_NOT_TAKEN;
+            ProxEst2 <= WEAK_NOT_TAKEN;
+        end
+
+        else begin
+            EstPres1 <= ProxEst1;
+            if (!history) begin
+            if (ProxEst1 == STRONG_TAKEN | ProxEst1 == WEAK_TAKEN) state <= 1;
+            else if (ProxEst1 == STRONG_NOT_TAKEN | ProxEst1 == WEAK_NOT_TAKEN) state <= 0;
+            end
+
+            EstPres2 <= ProxEst2;
+            if (history) begin
+            if (ProxEst2 == STRONG_TAKEN | ProxEst2 == WEAK_TAKEN) state <= 1;
+            else if (ProxEst2 == STRONG_NOT_TAKEN | ProxEst2 == WEAK_NOT_TAKEN) state <= 0;
+            end
+            
+        end
+    end 
+
+    always @(posedge branch) begin
+
+    if (!history) begin
+    case (EstPres1) 
+        WEAK_NOT_TAKEN: begin
+            //state = 0;
+            if (branch_result == 1) ProxEst1 = STRONG_TAKEN;
+            else ProxEst1 = STRONG_NOT_TAKEN;
+        end
+
+        WEAK_TAKEN: begin
+            //state = 1;
+            if (branch_result == 1) ProxEst1 = STRONG_TAKEN;
+            else ProxEst1 = STRONG_NOT_TAKEN;
+        end
+
+        STRONG_NOT_TAKEN: begin
+            //state = 0;
+            if (branch_result == 1) ProxEst1 = WEAK_NOT_TAKEN;
+            else ProxEst1 = STRONG_NOT_TAKEN;
+        end
+
+        STRONG_TAKEN: begin
+            //state = 1;
+            if (branch_result == 1) ProxEst1 = STRONG_TAKEN;
+            else ProxEst1 = WEAK_TAKEN;
+        end
+    endcase
+    end
+
+    if (history) begin
+      case (EstPres2) 
+        WEAK_NOT_TAKEN: begin
+            //state = 0;
+            if (branch_result == 1) ProxEst2 = STRONG_TAKEN;
+            else ProxEst2 = STRONG_NOT_TAKEN;
+        end
+
+        WEAK_TAKEN: begin
+            //state = 1;
+            if (branch_result == 1) ProxEst2 = STRONG_TAKEN;
+            else ProxEst2 = STRONG_NOT_TAKEN;
+        end
+
+        STRONG_NOT_TAKEN: begin
+            //state = 0;
+            if (branch_result == 1) ProxEst2 = WEAK_NOT_TAKEN;
+            else ProxEst2 = STRONG_NOT_TAKEN;
+        end
+
+        STRONG_TAKEN: begin
+            //state = 1;
+            if (branch_result == 1) ProxEst2 = STRONG_TAKEN;
+            else ProxEst2 = WEAK_TAKEN;
+        end
+    endcase
+    end
+  end
+
+
+endmodule
     
     
