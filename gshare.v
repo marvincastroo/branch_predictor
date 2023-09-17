@@ -35,7 +35,7 @@ always @(posedge clk) begin
    else begin
       index = ghr ^ addr;
       
-      ghr <= {(ghr << 1), branch};
+      ghr <= {ghr, branch};
       
       prediction_table[index] <= Prox_prediction_value;
       an_prediction_value = prediction_table[index -1];
