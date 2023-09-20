@@ -909,12 +909,14 @@ wire predictor_2b_hist;
 
 wire predictor_btb;
 
+wire [31:0] fallos_btb;
+
 
 bp_2bit two_bit_predictor (.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .state(predictor_2b));
 
 bp_2bit_history two_bp_history (.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .history(history_bit), .state(predictor_2b_hist));
 
-bp_btb btb_predictor (.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .dirpc(iaddr_o), .branchcompare(ex_mem_data_r), .state(predictor_btb));
+bp_btb btb_predictor (.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .dirpc(iaddr_o), .fallos_btb(fallos_btb), .state(predictor_btb));
 
 endmodule
 
@@ -1081,16 +1083,17 @@ endmodule
 // branch = 1 es TAKEN
 // branch = 0 es NOT TAKEN
 
-module bp_btb(clk, reset, branch, branch_result, dirpc, branchcompare, state);
+module bp_btb(clk, reset, branch, branch_result, dirpc, fallos_btb, state);
     input clk, reset, branch, branch_result;
-    input [31:0] dirpc, branchcompare;
+    input [31:0] dirpc;
     output reg state;
+    output integer fallos_btb;
 
     reg [3:0] EstPres, ProxEst;
     reg [31:0] dirpcanterior_bne,dirpcanterior_beq,dirpcanterior;
     reg [31:0] Branch_Target_Buffer_pc [3:0];
     reg [31:0] Branch_Target_Buffer_predicted_pc [3:0];
-    integer i,salto,newpc;
+    integer i,salto,newpc,wrong_index;
     time index_pc,index_predictedpc;
 
     parameter NO_ENTRY = 3'b000;
@@ -1106,6 +1109,7 @@ module bp_btb(clk, reset, branch, branch_result, dirpc, branchcompare, state);
             salto <= 0;
             state <= 0;
             newpc = 0;
+            fallos_btb = 0;
         end
 
         else begin
@@ -1113,13 +1117,14 @@ module bp_btb(clk, reset, branch, branch_result, dirpc, branchcompare, state);
             for(i=0;i<4;i=i+1) begin
               
               if( dirpc == Branch_Target_Buffer_pc[i]) begin
+                wrong_index = i;
                 state <= 1;
                 salto <= 1;
               end
             end
         end
 
-        if (branchcompare != 0 && branch == 0) begin
+        if (branch == 0) begin
           dirpcanterior_bne <= dirpcanterior_beq;
           dirpcanterior_beq <= dirpc;
         end
@@ -1154,7 +1159,7 @@ module bp_btb(clk, reset, branch, branch_result, dirpc, branchcompare, state);
 
         BRANCH_TAKEN_NOT_FOUND: begin
             //state = 0; 
-            if (branchcompare != 0) begin
+            if (dirpcanterior_beq == dirpcanterior_bne) begin
               dirpcanterior = dirpcanterior_beq;
             end 
             else begin 
@@ -1166,9 +1171,8 @@ module bp_btb(clk, reset, branch, branch_result, dirpc, branchcompare, state);
             Branch_Target_Buffer_pc[newpc] <= index_pc;
             Branch_Target_Buffer_predicted_pc[newpc] <= index_predictedpc;
             newpc = newpc + 1;
-            ProxEst = NO_ENTRY;
-
-            
+            fallos_btb = fallos_btb + 1;
+            ProxEst = NO_ENTRY;  
         end
 
         BRANCH_TAKEN_ENTRY_FOUND: begin
@@ -1180,8 +1184,11 @@ module bp_btb(clk, reset, branch, branch_result, dirpc, branchcompare, state);
 
         BRANCH_NOT_TAKEN_ENTRY_FOUND: begin
             //state = 1;
+            Branch_Target_Buffer_pc[wrong_index] <= 32'b0;
+            Branch_Target_Buffer_predicted_pc[wrong_index] <= 32'b0;
             state <= 0;
             salto <= 0;
+            fallos_btb = fallos_btb + 1;
             ProxEst = NO_ENTRY;
         end
     endcase
