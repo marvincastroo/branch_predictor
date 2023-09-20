@@ -909,14 +909,26 @@ wire predictor_2b_hist;
 
 wire predictor_btb;
 
-wire [31:0] fallos_btb;
+wire [31:0] fallos_btb; 
+
+wire [31:0] fallos_2bit;
+
+wire [31:0] fallos_2bit_history;
+
+wire [31:0] Tasa_BTB;
+
+wire [31:0] Tasa_2bit;
+
+wire [31:0] Tasa_2bit_history;
 
 
-bp_2bit two_bit_predictor (.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .state(predictor_2b));
+bp_2bit two_bit_predictor (.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .state(predictor_2b), .fallos_2bit(fallos_2bit));
 
-bp_2bit_history two_bp_history (.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .history(history_bit), .state(predictor_2b_hist));
+bp_2bit_history two_bp_history (.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .history(history_bit), .state(predictor_2b_hist), .fallos_2bit_history(fallos_2bit_history));
 
 bp_btb btb_predictor (.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .dirpc(iaddr_o), .fallos_btb(fallos_btb), .state(predictor_btb));
+
+tasa_de_acierto Tasa_de_acierto (.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .fallos_btb(fallos_btb), .fallos_2bit(fallos_2bit), .fallos_2bit_history(fallos_2bit_history), .tasa_btb(Tasa_BTB), .tasa_2bit(Tasa_2bit), .tasa_2bit_history(Tasa_2bit_history));
 
 endmodule
 
@@ -925,9 +937,11 @@ endmodule
 // branch = 0 es NOT TAKEN
 // el estado inicial del BP es WEAK NOT TAKEN
 
-module bp_2bit(clk, reset, branch, branch_result, state);
+module bp_2bit(clk, reset, branch, branch_result, state, fallos_2bit);
     input clk, reset, branch, branch_result;
     output reg state;
+    output integer fallos_2bit;
+    
 
     reg [3:0] EstPres, ProxEst;
 
@@ -941,6 +955,7 @@ module bp_2bit(clk, reset, branch, branch_result, state);
         if (reset) begin
             EstPres <= WEAK_NOT_TAKEN;
             ProxEst <= WEAK_NOT_TAKEN;
+            fallos_2bit = 0;
         end
 
         else begin
@@ -950,12 +965,16 @@ module bp_2bit(clk, reset, branch, branch_result, state);
         end
     end 
 
-    always @(posedge branch)
+    always @(posedge branch) begin
+
+    if (branch_result != state) fallos_2bit = fallos_2bit + 1;
+
     case (EstPres) 
         WEAK_NOT_TAKEN: begin
             //state = 0;
             if (branch_result == 1) ProxEst = STRONG_TAKEN;
             else ProxEst = STRONG_NOT_TAKEN;
+            
         end
 
         WEAK_TAKEN: begin
@@ -976,13 +995,15 @@ module bp_2bit(clk, reset, branch, branch_result, state);
             else ProxEst = WEAK_TAKEN;
         end
     endcase
+    end
 
 endmodule
 
          
-module bp_2bit_history(clk, reset, branch, branch_result, history, state);
+module bp_2bit_history(clk, reset, branch, branch_result, history, state, fallos_2bit_history);
     input clk, reset, branch, branch_result, history;
     output reg state;
+    output integer fallos_2bit_history;
 
     reg [3:0] EstPres1, ProxEst1, EstPres2, ProxEst2;
 
@@ -999,6 +1020,7 @@ module bp_2bit_history(clk, reset, branch, branch_result, history, state);
             ProxEst1 <= WEAK_NOT_TAKEN;
             EstPres2 <= WEAK_NOT_TAKEN;
             ProxEst2 <= WEAK_NOT_TAKEN;
+            fallos_2bit_history = 0;
         end
 
         else begin
@@ -1018,6 +1040,8 @@ module bp_2bit_history(clk, reset, branch, branch_result, history, state);
     end 
 
     always @(posedge branch) begin
+
+    if (branch_result != state) fallos_2bit_history = fallos_2bit_history + 1;
 
     if (!history) begin
     case (EstPres1) 
@@ -1091,8 +1115,8 @@ module bp_btb(clk, reset, branch, branch_result, dirpc, fallos_btb, state);
 
     reg [3:0] EstPres, ProxEst;
     reg [31:0] dirpcanterior_bne,dirpcanterior_beq,dirpcanterior;
-    reg [31:0] Branch_Target_Buffer_pc [3:0];
-    reg [31:0] Branch_Target_Buffer_predicted_pc [3:0];
+    reg [31:0] Branch_Target_Buffer_pc [63:0];
+    reg [31:0] Branch_Target_Buffer_predicted_pc [63:0];
     integer i,salto,newpc,wrong_index;
     time index_pc,index_predictedpc;
 
@@ -1115,11 +1139,12 @@ module bp_btb(clk, reset, branch, branch_result, dirpc, fallos_btb, state);
         else begin
             EstPres <= ProxEst;
             for(i=0;i<4;i=i+1) begin
-              
               if( dirpc == Branch_Target_Buffer_pc[i]) begin
-                wrong_index = i;
                 state <= 1;
                 salto <= 1;
+              end
+              if( dirpcanterior == Branch_Target_Buffer_pc[i]) begin
+                wrong_index = i;
               end
             end
         end
@@ -1140,15 +1165,11 @@ module bp_btb(clk, reset, branch, branch_result, dirpc, fallos_btb, state);
     case (EstPres) 
         NO_ENTRY: begin
             //state = 0;
-            for(i=0;i<4;i=i+1) begin
-              if(dirpcanterior_bne == Branch_Target_Buffer_pc[i]) begin
-                dirpcanterior = dirpcanterior_bne;
-              end
-            end
-            for(i=0;i<4;i=i+1) begin
-              if( dirpcanterior_beq == Branch_Target_Buffer_pc[i]) begin
-                dirpcanterior = dirpcanterior_beq;
-              end
+            if (dirpcanterior_beq == dirpcanterior_bne) begin
+              dirpcanterior = dirpcanterior_beq;
+            end 
+            else begin 
+              dirpcanterior = dirpcanterior_bne;
             end
             if (branch_result == 1 && salto == 0) ProxEst = BRANCH_TAKEN_NOT_FOUND;
             else if (branch_result == 1 && salto == 1) ProxEst = BRANCH_TAKEN_ENTRY_FOUND;
@@ -1193,7 +1214,63 @@ module bp_btb(clk, reset, branch, branch_result, dirpc, fallos_btb, state);
         end
     endcase
     end
+endmodule
+
+module tasa_de_acierto(clk, reset, branch, branch_result, fallos_btb, fallos_2bit, fallos_2bit_history, tasa_btb, tasa_2bit, tasa_2bit_history);
+    input clk, reset, branch, branch_result;
+    input [31:0] fallos_btb, fallos_2bit, fallos_2bit_history;
+    integer branch_counter;
+    output integer tasa_btb, tasa_2bit, tasa_2bit_history;
+    time cantidad_branches,fallos_predictor;
+
+    reg [3:0] EstPres, ProxEst;
+
+    parameter NO_BRANCH = 1'b0;
+    parameter BRANCH_DETECTED = 1'b1;
+
+
+    always @(posedge clk) begin
+        
+        if (reset) begin
+            EstPres <= NO_BRANCH;
+            ProxEst <= NO_BRANCH;
+            tasa_btb = 0;
+            tasa_2bit = 0;
+            tasa_2bit_history = 0;
+            branch_counter = 0;
+            fallos_predictor = 0;
+        end
+
+        else begin
+            EstPres <= ProxEst;
+            if (branch == 0) begin
+              fallos_predictor = fallos_btb[31]*2147483648 + fallos_btb[30]*1073741824 + fallos_btb[29]*536870912 + fallos_btb[28]*268435456 + fallos_btb[27]*134217728 + fallos_btb[26]*67108864 + fallos_btb[25]*33554432 + fallos_btb[24]*16777216 + fallos_btb[23]*8388608 + fallos_btb[22]*4194304 + fallos_btb[21]*2097152 + fallos_btb[20]*1048576 + fallos_btb[19]*524288 + fallos_btb[18]*262144 + fallos_btb[17]*131072 + fallos_btb[16]*65536 + fallos_btb[15]*32768 + fallos_btb[14]*16384 + fallos_btb[13]*8192 + fallos_btb[12]*4096 + fallos_btb[11]*2048 + fallos_btb[10]*1024 + fallos_btb[9]*512 + fallos_btb[8]*256 + fallos_btb[7]*128 + fallos_btb[6]*64 + fallos_btb[5]*32 + fallos_btb[4]*16 + fallos_btb[3]*8 + fallos_btb[2]*4 + fallos_btb[1]*2 + fallos_btb[0]*1;
+              cantidad_branches = branch_counter[31]*2147483648 + branch_counter[30]*1073741824 + branch_counter[29]*536870912 + branch_counter[28]*268435456 + branch_counter[27]*134217728 + branch_counter[26]*67108864 + branch_counter[25]*33554432 + branch_counter[24]*16777216 + branch_counter[23]*8388608 + branch_counter[22]*4194304 + branch_counter[21]*2097152 + branch_counter[20]*1048576 + branch_counter[19]*524288 + branch_counter[18]*262144 + branch_counter[17]*131072 + branch_counter[16]*65536 + branch_counter[15]*32768 + branch_counter[14]*16384 + branch_counter[13]*8192 + branch_counter[12]*4096 + branch_counter[11]*2048 + branch_counter[10]*1024 + branch_counter[9]*512 + branch_counter[8]*256 + branch_counter[7]*128 + branch_counter[6]*64 + branch_counter[5]*32 + branch_counter[4]*16 + branch_counter[3]*8 + branch_counter[2]*4 + branch_counter[1]*2 + branch_counter[0]*1;
+              tasa_btb = (cantidad_branches - fallos_predictor)*100/cantidad_branches;
+              fallos_predictor = fallos_2bit[31]*2147483648 + fallos_2bit[30]*1073741824 + fallos_2bit[29]*536870912 + fallos_2bit[28]*268435456 + fallos_2bit[27]*134217728 + fallos_2bit[26]*67108864 + fallos_2bit[25]*33554432 + fallos_2bit[24]*16777216 + fallos_2bit[23]*8388608 + fallos_2bit[22]*4194304 + fallos_2bit[21]*2097152 + fallos_2bit[20]*1048576 + fallos_2bit[19]*524288 + fallos_2bit[18]*262144 + fallos_2bit[17]*131072 + fallos_2bit[16]*65536 + fallos_2bit[15]*32768 + fallos_2bit[14]*16384 + fallos_2bit[13]*8192 + fallos_2bit[12]*4096 + fallos_2bit[11]*2048 + fallos_2bit[10]*1024 + fallos_2bit[9]*512 + fallos_2bit[8]*256 + fallos_2bit[7]*128 + fallos_2bit[6]*64 + fallos_2bit[5]*32 + fallos_2bit[4]*16 + fallos_2bit[3]*8 + fallos_2bit[2]*4 + fallos_2bit[1]*2 + fallos_2bit[0]*1;
+              tasa_2bit = (cantidad_branches - fallos_predictor)*100/cantidad_branches;
+              fallos_predictor = fallos_2bit_history[31]*2147483648 + fallos_2bit_history[30]*1073741824 + fallos_2bit_history[29]*536870912 + fallos_2bit_history[28]*268435456 + fallos_2bit_history[27]*134217728 + fallos_2bit_history[26]*67108864 + fallos_2bit_history[25]*33554432 + fallos_2bit_history[24]*16777216 + fallos_2bit_history[23]*8388608 + fallos_2bit_history[22]*4194304 + fallos_2bit_history[21]*2097152 + fallos_2bit_history[20]*1048576 + fallos_2bit_history[19]*524288 + fallos_2bit_history[18]*262144 + fallos_2bit_history[17]*131072 + fallos_2bit_history[16]*65536 + fallos_2bit_history[15]*32768 + fallos_2bit_history[14]*16384 + fallos_2bit_history[13]*8192 + fallos_2bit_history[12]*4096 + fallos_2bit_history[11]*2048 + fallos_2bit_history[10]*1024 + fallos_2bit_history[9]*512 + fallos_2bit_history[8]*256 + fallos_2bit_history[7]*128 + fallos_2bit_history[6]*64 + fallos_2bit_history[5]*32 + fallos_2bit_history[4]*16 + fallos_2bit_history[3]*8 + fallos_2bit_history[2]*4 + fallos_2bit_history[1]*2 + fallos_2bit_history[0]*1;
+              tasa_2bit_history = (cantidad_branches - fallos_predictor)*100/cantidad_branches;
+            end
+        end
+    end 
+
+    always @(branch)
+    case (EstPres) 
+        NO_BRANCH: begin
+            branch_counter = branch_counter;
+            if (branch == 1) ProxEst = BRANCH_DETECTED;
+            else ProxEst = NO_BRANCH;
+        end
+
+        BRANCH_DETECTED: begin
+            branch_counter = branch_counter + 1;
+            if (branch == 1) ProxEst = BRANCH_DETECTED;
+            else ProxEst = NO_BRANCH;
+        end
+    endcase
 
 endmodule
+
     
     
