@@ -1125,6 +1125,10 @@ module bp_btb(clk, reset, branch, branch_result, dirpc, fallos_btb, state);
     parameter BRANCH_TAKEN_ENTRY_FOUND = 3'b010;
     parameter BRANCH_NOT_TAKEN_ENTRY_FOUND = 3'b100;
 
+    // initial begin
+    //  for (idx = 0; idx < 4; idx = idx + 1) $dumpvars(0, Branch_Target_Buffer_pc[idx], Branch_Target_Buffer_predicted_pc[idx]);
+    // end
+
     always @(posedge clk) begin
         
         if (reset) begin
