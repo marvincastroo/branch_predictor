@@ -923,6 +923,12 @@ wire [31:0] Tasa_BTB;
 
 wire [31:0] Tasa_2bit;
 
+wire [31:0] Tasa_gshare;
+
+wire [31:0] Tasa_Agree;
+
+wire [31:0] Tasa_tournament;
+
 wire [31:0] Tasa_2bit_history;
 
 wire predictor_Agree;
@@ -944,7 +950,7 @@ Gshare gshare_predictor(.clk(clk_i), .reset(reset_i), .branch(branch_inst), .bra
 Agree_bp agree_predictor(.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .bias_bit(predictor_btb), .pht_prediction(predictor_gshare), .Agre_prediction(predictor_Agree), .fallos_Agree(fallos_Agree));
 // module tournament_bp(clk, reset, branch_result, prediction_gshare, prediction_tournament, fallos_2bit);
 tournament_bp tournament (.clk(clk_i), .reset(reset_i), .branch_result(branch_result), .prediction_gshare(predictor_gshare), .prediction_pshare(predictor_2b_hist), .prediction_tournament(predictor_tournament), .fallos_2bit(fallos_tournament));
-tasa_de_acierto Tasa_de_acierto (.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .fallos_btb(fallos_btb), .fallos_2bit(fallos_2bit), .fallos_2bit_history(fallos_2bit_history), .tasa_btb(Tasa_BTB), .tasa_2bit(Tasa_2bit), .tasa_2bit_history(Tasa_2bit_history));
+tasa_de_acierto Tasa_de_acierto (.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .fallos_btb(fallos_btb), .fallos_2bit(fallos_2bit), .fallos_gshare(fallos_gshare), .fallos_Agree(fallos_Agree), .fallos_tournament(fallos_tournament), .fallos_2bit_history(fallos_2bit_history), .tasa_btb(Tasa_BTB), .tasa_2bit(Tasa_2bit), .tasa_2bit_history(Tasa_2bit_history), .tasa_gshare(Tasa_gshare), .tasa_tournament(Tasa_tournament), .tasa_Agree(Tasa_Agree));
 
 endmodule
 
@@ -1130,10 +1136,10 @@ module bp_btb(clk, reset, branch, branch_result, dirpc, fallos_btb, state);
     output integer fallos_btb;
 
     reg [3:0] EstPres, ProxEst;
-    reg [31:0] dirpcanterior_bne,dirpcanterior_beq,dirpcanterior;
+    reg [31:0] dirpcanterior_2,dirpcanterior_1,dirpcanterior;
     reg [31:0] Branch_Target_Buffer_pc [63:0];
     reg [31:0] Branch_Target_Buffer_predicted_pc [63:0];
-    integer i,salto,newpc,wrong_index;
+    integer i,salto,newpc,wrong_index, idx;
     time index_pc,index_predictedpc;
 
     parameter NO_ENTRY = 3'b000;
@@ -1141,7 +1147,7 @@ module bp_btb(clk, reset, branch, branch_result, dirpc, fallos_btb, state);
     parameter BRANCH_TAKEN_ENTRY_FOUND = 3'b010;
     parameter BRANCH_NOT_TAKEN_ENTRY_FOUND = 3'b100;
 
-    // Quitar estos comentarios lineas 1140 - 1142 para poder visualizar los arrays de memoria individualmente
+    // Quitar estos comentarios lineas 1151 - 1153 para poder visualizar los arrays de memoria individualmente
     // initial begin
     //  for (idx = 0; idx < 63; idx = idx + 1) $dumpvars(0, Branch_Target_Buffer_pc[idx], Branch_Target_Buffer_predicted_pc[idx]);
     // end
@@ -1171,13 +1177,10 @@ module bp_btb(clk, reset, branch, branch_result, dirpc, fallos_btb, state);
         end
 
         if (branch == 0) begin
-          dirpcanterior_bne <= dirpcanterior_beq;
-          dirpcanterior_beq <= dirpc;
+          dirpcanterior_2 <= dirpcanterior_1;
+          dirpcanterior_1 <= dirpc;
         end
 
-        if (branch == 0) begin
-          dirpcanterior_beq <= dirpc;
-        end
     end 
 
 
@@ -1186,11 +1189,11 @@ module bp_btb(clk, reset, branch, branch_result, dirpc, fallos_btb, state);
     case (EstPres) 
         NO_ENTRY: begin
             //state = 0;
-            if (dirpcanterior_beq == dirpcanterior_bne) begin
-              dirpcanterior = dirpcanterior_beq;
+            if (dirpcanterior_1 == dirpcanterior_2) begin
+              dirpcanterior = dirpcanterior_1;
             end 
             else begin 
-              dirpcanterior = dirpcanterior_bne;
+              dirpcanterior = dirpcanterior_2;
             end
             if (branch_result == 1 && salto == 0) ProxEst = BRANCH_TAKEN_NOT_FOUND;
             else if (branch_result == 1 && salto == 1) ProxEst = BRANCH_TAKEN_ENTRY_FOUND;
@@ -1198,14 +1201,13 @@ module bp_btb(clk, reset, branch, branch_result, dirpc, fallos_btb, state);
             else ProxEst = NO_ENTRY;
             
         end
-
         BRANCH_TAKEN_NOT_FOUND: begin
             //state = 0; 
-            if (dirpcanterior_beq == dirpcanterior_bne) begin
-              dirpcanterior = dirpcanterior_beq;
+            if (dirpcanterior_1 == dirpcanterior_2) begin
+              dirpcanterior = dirpcanterior_1;
             end 
             else begin 
-              dirpcanterior = dirpcanterior_bne;
+              dirpcanterior = dirpcanterior_2;
             end
             index_predictedpc = dirpc[31]*2147483648 + dirpc[30]*1073741824 + dirpc[29]*536870912 + dirpc[28]*268435456 + dirpc[27]*134217728 + dirpc[26]*67108864 + dirpc[25]*33554432 + dirpc[24]*16777216 + dirpc[23]*8388608 + dirpc[22]*4194304 + dirpc[21]*2097152 + dirpc[20]*1048576 + dirpc[19]*524288 + dirpc[18]*262144 + dirpc[17]*131072 + dirpc[16]*65536 + dirpc[15]*32768 + dirpc[14]*16384 + dirpc[13]*8192 + dirpc[12]*4096 + dirpc[11]*2048 + dirpc[10]*1024 + dirpc[9]*512 + dirpc[8]*256 + dirpc[7]*128 + dirpc[6]*64 + dirpc[5]*32 + dirpc[4]*16 + dirpc[3]*8 + dirpc[2]*4 + dirpc[1]*2 + dirpc[0]*1;
             index_pc = dirpcanterior[31]*2147483648 + dirpcanterior[30]*1073741824 + dirpcanterior[29]*536870912 + dirpcanterior[28]*268435456 + dirpcanterior[27]*134217728 + dirpcanterior[26]*67108864 + dirpcanterior[25]*33554432 + dirpcanterior[24]*16777216 + dirpcanterior[23]*8388608 + dirpcanterior[22]*4194304 + dirpcanterior[21]*2097152 + dirpcanterior[20]*1048576 + dirpcanterior[19]*524288 + dirpcanterior[18]*262144 + dirpcanterior[17]*131072 + dirpcanterior[16]*65536 + dirpcanterior[15]*32768 + dirpcanterior[14]*16384 + dirpcanterior[13]*8192 + dirpcanterior[12]*4096 + dirpcanterior[11]*2048 + dirpcanterior[10]*1024 + dirpcanterior[9]*512 + dirpcanterior[8]*256 + dirpcanterior[7]*128 + dirpcanterior[6]*64 + dirpcanterior[5]*32 + dirpcanterior[4]*16 + dirpcanterior[3]*8 + dirpcanterior[2]*4 + dirpcanterior[1]*2 + dirpcanterior[0]*1;
@@ -1237,11 +1239,11 @@ module bp_btb(clk, reset, branch, branch_result, dirpc, fallos_btb, state);
     end
 endmodule
 
-module tasa_de_acierto(clk, reset, branch, branch_result, fallos_btb, fallos_2bit, fallos_2bit_history, tasa_btb, tasa_2bit, tasa_2bit_history);
+module tasa_de_acierto(clk, reset, branch, branch_result, fallos_btb, fallos_2bit, fallos_2bit_history, fallos_gshare, fallos_Agree, fallos_tournament, tasa_btb, tasa_2bit, tasa_2bit_history, tasa_Agree, tasa_gshare, tasa_tournament);
     input clk, reset, branch, branch_result;
-    input [31:0] fallos_btb, fallos_2bit, fallos_2bit_history;
+    input [31:0] fallos_btb, fallos_2bit, fallos_2bit_history, fallos_gshare, fallos_Agree, fallos_tournament;
     integer branch_counter;
-    output integer tasa_btb, tasa_2bit, tasa_2bit_history;
+    output integer tasa_btb, tasa_2bit, tasa_2bit_history, tasa_Agree, tasa_gshare, tasa_tournament;
     time cantidad_branches,fallos_predictor;
 
     reg [3:0] EstPres, ProxEst;
@@ -1258,6 +1260,9 @@ module tasa_de_acierto(clk, reset, branch, branch_result, fallos_btb, fallos_2bi
             tasa_btb = 0;
             tasa_2bit = 0;
             tasa_2bit_history = 0;
+            tasa_Agree = 0;
+            tasa_gshare = 0;
+            tasa_tournament = 0;
             branch_counter = 0;
             fallos_predictor = 0;
         end
@@ -1272,6 +1277,13 @@ module tasa_de_acierto(clk, reset, branch, branch_result, fallos_btb, fallos_2bi
               tasa_2bit = (cantidad_branches - fallos_predictor)*100/cantidad_branches;
               fallos_predictor = fallos_2bit_history[31]*2147483648 + fallos_2bit_history[30]*1073741824 + fallos_2bit_history[29]*536870912 + fallos_2bit_history[28]*268435456 + fallos_2bit_history[27]*134217728 + fallos_2bit_history[26]*67108864 + fallos_2bit_history[25]*33554432 + fallos_2bit_history[24]*16777216 + fallos_2bit_history[23]*8388608 + fallos_2bit_history[22]*4194304 + fallos_2bit_history[21]*2097152 + fallos_2bit_history[20]*1048576 + fallos_2bit_history[19]*524288 + fallos_2bit_history[18]*262144 + fallos_2bit_history[17]*131072 + fallos_2bit_history[16]*65536 + fallos_2bit_history[15]*32768 + fallos_2bit_history[14]*16384 + fallos_2bit_history[13]*8192 + fallos_2bit_history[12]*4096 + fallos_2bit_history[11]*2048 + fallos_2bit_history[10]*1024 + fallos_2bit_history[9]*512 + fallos_2bit_history[8]*256 + fallos_2bit_history[7]*128 + fallos_2bit_history[6]*64 + fallos_2bit_history[5]*32 + fallos_2bit_history[4]*16 + fallos_2bit_history[3]*8 + fallos_2bit_history[2]*4 + fallos_2bit_history[1]*2 + fallos_2bit_history[0]*1;
               tasa_2bit_history = (cantidad_branches - fallos_predictor)*100/cantidad_branches;
+              fallos_predictor = fallos_gshare[31]*2147483648 + fallos_gshare[30]*1073741824 + fallos_gshare[29]*536870912 + fallos_gshare[28]*268435456 + fallos_gshare[27]*134217728 + fallos_gshare[26]*67108864 + fallos_gshare[25]*33554432 + fallos_gshare[24]*16777216 + fallos_gshare[23]*8388608 + fallos_gshare[22]*4194304 + fallos_gshare[21]*2097152 + fallos_gshare[20]*1048576 + fallos_gshare[19]*524288 + fallos_gshare[18]*262144 + fallos_gshare[17]*131072 + fallos_gshare[16]*65536 + fallos_gshare[15]*32768 + fallos_gshare[14]*16384 + fallos_gshare[13]*8192 + fallos_gshare[12]*4096 + fallos_gshare[11]*2048 + fallos_gshare[10]*1024 + fallos_gshare[9]*512 + fallos_gshare[8]*256 + fallos_gshare[7]*128 + fallos_gshare[6]*64 + fallos_gshare[5]*32 + fallos_gshare[4]*16 + fallos_gshare[3]*8 + fallos_gshare[2]*4 + fallos_gshare[1]*2 + fallos_gshare[0]*1;
+              tasa_gshare = (cantidad_branches - fallos_predictor)*100/cantidad_branches;
+              fallos_predictor = fallos_Agree[31]*2147483648 + fallos_Agree[30]*1073741824 + fallos_Agree[29]*536870912 + fallos_Agree[28]*268435456 + fallos_Agree[27]*134217728 + fallos_Agree[26]*67108864 + fallos_Agree[25]*33554432 + fallos_Agree[24]*16777216 + fallos_Agree[23]*8388608 + fallos_Agree[22]*4194304 + fallos_Agree[21]*2097152 + fallos_Agree[20]*1048576 + fallos_Agree[19]*524288 + fallos_Agree[18]*262144 + fallos_Agree[17]*131072 + fallos_Agree[16]*65536 + fallos_Agree[15]*32768 + fallos_Agree[14]*16384 + fallos_Agree[13]*8192 + fallos_Agree[12]*4096 + fallos_Agree[11]*2048 + fallos_Agree[10]*1024 + fallos_Agree[9]*512 + fallos_Agree[8]*256 + fallos_Agree[7]*128 + fallos_Agree[6]*64 + fallos_Agree[5]*32 + fallos_Agree[4]*16 + fallos_Agree[3]*8 + fallos_Agree[2]*4 + fallos_Agree[1]*2 + fallos_Agree[0]*1;
+              tasa_Agree = (cantidad_branches - fallos_predictor)*100/cantidad_branches;
+              fallos_predictor = fallos_tournament[31]*2147483648 + fallos_tournament[30]*1073741824 + fallos_tournament[29]*536870912 + fallos_tournament[28]*268435456 + fallos_tournament[27]*134217728 + fallos_tournament[26]*67108864 + fallos_tournament[25]*33554432 + fallos_tournament[24]*16777216 + fallos_tournament[23]*8388608 + fallos_tournament[22]*4194304 + fallos_tournament[21]*2097152 + fallos_tournament[20]*1048576 + fallos_tournament[19]*524288 + fallos_tournament[18]*262144 + fallos_tournament[17]*131072 + fallos_tournament[16]*65536 + fallos_tournament[15]*32768 + fallos_tournament[14]*16384 + fallos_tournament[13]*8192 + fallos_tournament[12]*4096 + fallos_tournament[11]*2048 + fallos_tournament[10]*1024 + fallos_tournament[9]*512 + fallos_tournament[8]*256 + fallos_tournament[7]*128 + fallos_tournament[6]*64 + fallos_tournament[5]*32 + fallos_tournament[4]*16 + fallos_tournament[3]*8 + fallos_tournament[2]*4 + fallos_tournament[1]*2 + fallos_tournament[0]*1;
+              tasa_tournament = (cantidad_branches - fallos_predictor)*100/cantidad_branches;
+
             end
         end
     end 
@@ -1518,5 +1530,6 @@ always @(posedge clk) begin
 always @(posedge branch) begin
     Agre_prediction = mux_out;
 end
+
 
 endmodule    
