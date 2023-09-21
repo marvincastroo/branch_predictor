@@ -1165,7 +1165,7 @@ module bp_btb(clk, reset, branch, branch_result, dirpc, fallos_btb, state);
 
         else begin
             EstPres <= ProxEst;
-            for(i=0;i<4;i=i+1) begin
+            for(i=0;i<64;i=i+1) begin
               if( dirpc == Branch_Target_Buffer_pc[i]) begin
                 state <= 1;
                 salto <= 1;
@@ -1257,12 +1257,12 @@ module tasa_de_acierto(clk, reset, branch, branch_result, fallos_btb, fallos_2bi
         if (reset) begin
             EstPres <= NO_BRANCH;
             ProxEst <= NO_BRANCH;
-            tasa_btb = 0;
-            tasa_2bit = 0;
-            tasa_2bit_history = 0;
-            tasa_Agree = 0;
-            tasa_gshare = 0;
-            tasa_tournament = 0;
+            tasa_btb <= 32'b0;
+            tasa_2bit <= 32'b0;
+            tasa_2bit_history <= 32'b0;
+            tasa_Agree <= 32'b0;
+            tasa_gshare <= 32'b0;
+            tasa_tournament <= 32'b0;
             branch_counter = 0;
             fallos_predictor = 0;
         end
