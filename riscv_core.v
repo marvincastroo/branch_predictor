@@ -909,6 +909,8 @@ wire predictor_2b_hist;
 
 wire predictor_btb;
 
+wire predictor_gshare;
+
 wire [31:0] fallos_btb; 
 
 wire [31:0] fallos_2bit;
@@ -922,11 +924,14 @@ wire [31:0] Tasa_2bit;
 wire [31:0] Tasa_2bit_history;
 
 
+
 bp_2bit two_bit_predictor (.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .state(predictor_2b), .fallos_2bit(fallos_2bit));
 
 bp_2bit_history two_bp_history (.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .history(history_bit), .state(predictor_2b_hist), .fallos_2bit_history(fallos_2bit_history));
 
 bp_btb btb_predictor (.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .dirpc(iaddr_o), .fallos_btb(fallos_btb), .state(predictor_btb));
+
+Gshare gshare_predictor(.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .addr(iaddr_o), .prediction(predictor_gshare));
 
 tasa_de_acierto Tasa_de_acierto (.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .fallos_btb(fallos_btb), .fallos_2bit(fallos_2bit), .fallos_2bit_history(fallos_2bit_history), .tasa_btb(Tasa_BTB), .tasa_2bit(Tasa_2bit), .tasa_2bit_history(Tasa_2bit_history));
 
@@ -1276,5 +1281,95 @@ module tasa_de_acierto(clk, reset, branch, branch_result, fallos_btb, fallos_2bi
 
 endmodule
 
+
+module Gshare(
+            input clk, reset,
+            input branch,
+            input branch_result, 
+            input [31:0] addr, // Dirección 
+            output reg prediction); //Salida de la XOR al PHT
+
+reg [3:0] ghr; //Global History Register
+reg [3:0] prediction_table [15:0]; //tabla de 10 filas con 2 bits cada una
+reg [3:0] prediction_value, Prox_prediction_value, an_prediction_value;
+reg [3:0] index, an_index;
+
+parameter WEAK_NOT_TAKEN = 3'b000;
+parameter WEAK_TAKEN = 3'b001;
+parameter STRONG_NOT_TAKEN = 3'b010;
+parameter STRONG_TAKEN = 3'b100;
+
+integer idx;
+
+initial begin
+  for (idx = 0; idx < 15; idx = idx + 1) $dumpvars(0, prediction_table[idx]);
+end
+
+
+always @(posedge clk) begin 
+   
+   if (reset) begin 
+      ghr = 0;
+      index = 0;
+      an_index = 0;
+      for (idx = 0; idx < 15; idx = idx + 1) 
+      prediction_table[idx] = WEAK_NOT_TAKEN;
+      
+      Prox_prediction_value = 0;
+      prediction_value = 0;
+      prediction = 0;
+      end 
+
+   else begin
+      index = ghr ^ addr;
+      
+      ghr <= {ghr, branch};
+      
+      
+      an_prediction_value = prediction_table[index -1];
+      an_index = an_index+1;
     
+
+      end    
+end
+
+always @(posedge branch or negedge branch) begin
+  prediction_table[index] = prediction_value;
+end
+
+always @(posedge branch) begin //Revisar si no es solamente ghr 
+
+   case (prediction_table[index]) 
+   WEAK_NOT_TAKEN: begin
+      prediction_value = prediction_table[index];
+      prediction = 0;
+      if (branch_result == 1) prediction_value = STRONG_TAKEN;
+      else prediction_value = STRONG_NOT_TAKEN;
+   end
+
+   WEAK_TAKEN: begin
+      prediction_value = prediction_table[index];
+      prediction = 1;
+      if (branch_result == 1) prediction_value = STRONG_TAKEN;
+      else prediction_value = STRONG_NOT_TAKEN;
+   end
+
+   STRONG_NOT_TAKEN: begin
+      prediction_value = prediction_table[index];
+      prediction = 0;
+      if (branch_result == 1) prediction_value = WEAK_NOT_TAKEN;
+      else prediction_value = STRONG_NOT_TAKEN;
+   end
+
+   STRONG_TAKEN: begin
+      prediction_value = prediction_table[index];
+      prediction = 1;
+      if (branch_result == 1) prediction_value = STRONG_TAKEN;
+      else prediction_value = WEAK_TAKEN;
+   end
+   endcase
+
+end
+
+endmodule    
     
