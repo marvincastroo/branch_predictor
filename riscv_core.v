@@ -925,6 +925,10 @@ wire [31:0] Tasa_2bit;
 
 wire [31:0] Tasa_2bit_history;
 
+wire predictor_Agree;
+
+wire [31:0] fallos_Agree;
+
 wire predictor_tournament;
 
 wire [31:0] fallos_tournament;
@@ -937,6 +941,7 @@ bp_btb btb_predictor (.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branc
 
 Gshare gshare_predictor(.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .addr(iaddr_o), .prediction(predictor_gshare), .fallos_gshare(fallos_gshare));
 
+Agree_bp agree_predictor(.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .bias_bit(predictor_btb), .pht_prediction(predictor_gshare), .Agre_prediction(predictor_Agree), .fallos_Agree(fallos_Agree));
 // module tournament_bp(clk, reset, branch_result, prediction_gshare, prediction_tournament, fallos_2bit);
 tournament_bp tournament (.clk(clk_i), .reset(reset_i), .branch_result(branch_result), .prediction_gshare(predictor_gshare), .prediction_pshare(predictor_2b_hist), .prediction_tournament(predictor_tournament), .fallos_2bit(fallos_tournament));
 tasa_de_acierto Tasa_de_acierto (.clk(clk_i), .reset(reset_i), .branch(branch_inst), .branch_result(branch_result), .fallos_btb(fallos_btb), .fallos_2bit(fallos_2bit), .fallos_2bit_history(fallos_2bit_history), .tasa_btb(Tasa_BTB), .tasa_2bit(Tasa_2bit), .tasa_2bit_history(Tasa_2bit_history));
@@ -1299,7 +1304,7 @@ module Gshare(
 
 reg [3:0] ghr; //Global History Register
 reg [3:0] prediction_table [15:0]; //tabla de 10 filas con 2 bits cada una
-reg [3:0] prediction_value, Prox_prediction_value, an_prediction_value;
+reg [3:0] prediction_value;
 reg [3:0] index, an_index;
 
 parameter WEAK_NOT_TAKEN = 3'b000;
@@ -1309,9 +1314,9 @@ parameter STRONG_TAKEN = 3'b100;
 
 integer idx;
 
-// initial begin
-//   for (idx = 0; idx < 15; idx = idx + 1) $dumpvars(0, prediction_table[idx]);
-// end
+//initial begin
+ //  for (idx = 0; idx < 15; idx = idx + 1) $dumpvars(0, prediction_table[idx]);
+//end
 
  always @(posedge branch_result) begin 
         if (branch_result != prediction) fallos_gshare = fallos_gshare + 1;
@@ -1327,7 +1332,6 @@ always @(posedge clk) begin
       for (idx = 0; idx < 15; idx = idx + 1) 
       prediction_table[idx] = WEAK_NOT_TAKEN;
       
-      Prox_prediction_value = 0;
       prediction_value = 0;
       prediction = 0;
       fallos_gshare = 0;
@@ -1337,11 +1341,6 @@ always @(posedge clk) begin
       index = ghr ^ addr;
       
       ghr <= {ghr, branch};
-      
-      
-      an_prediction_value = prediction_table[index -1];
-      an_index = an_index+1;
-    
 
       end    
 end
@@ -1356,29 +1355,53 @@ always @(posedge branch) begin //Revisar si no es solamente ghr
    WEAK_NOT_TAKEN: begin
       prediction_value = prediction_table[index];
       prediction = 0;
-      if (branch_result == 1) prediction_value = STRONG_TAKEN;
-      else prediction_value = STRONG_NOT_TAKEN;
+      if (branch_result == 1) begin 
+        prediction_value = STRONG_TAKEN;
+        prediction = 1;
+        end
+      else begin 
+        prediction_value = STRONG_NOT_TAKEN;
+        prediction = 0;
+        end
    end
 
    WEAK_TAKEN: begin
       prediction_value = prediction_table[index];
       prediction = 1;
-      if (branch_result == 1) prediction_value = STRONG_TAKEN;
-      else prediction_value = STRONG_NOT_TAKEN;
+      if (branch_result == 1) begin
+        prediction_value = STRONG_TAKEN;
+        prediction = 1;
+        end
+      else begin 
+        prediction_value = STRONG_NOT_TAKEN;
+        prediction = 0;
+        end
    end
 
    STRONG_NOT_TAKEN: begin
       prediction_value = prediction_table[index];
       prediction = 0;
-      if (branch_result == 1) prediction_value = WEAK_NOT_TAKEN;
-      else prediction_value = STRONG_NOT_TAKEN;
+      if (branch_result == 1) begin
+        prediction_value = WEAK_NOT_TAKEN;
+        prediction = 0;
+        end
+      else begin 
+        prediction_value = STRONG_NOT_TAKEN;
+        prediction = 0;
+        end
    end
 
    STRONG_TAKEN: begin
       prediction_value = prediction_table[index];
       prediction = 1;
-      if (branch_result == 1) prediction_value = STRONG_TAKEN;
-      else prediction_value = WEAK_TAKEN;
+      if (branch_result == 1) begin 
+        prediction_value = STRONG_TAKEN;
+        prediction = 1;
+        end
+      else begin 
+        prediction_value = WEAK_TAKEN;
+        prediction = 1;
+        end
    end
    endcase
 
@@ -1460,3 +1483,40 @@ module tournament_bp(clk, reset, branch_result, prediction_gshare, prediction_ps
     end
 
 endmodule
+
+module Agree_bp(
+            input clk, reset,
+            input bias_bit,
+            input branch,
+            input branch_result, 
+            input pht_prediction,
+            output reg Agre_prediction, // Salida
+            output reg [31:0] fallos_Agree); 
+
+reg bias_bit_n, mux_out;
+
+ always @(posedge branch_result) begin 
+        if (branch_result != Agre_prediction) fallos_Agree = fallos_Agree + 1;
+  end
+
+always @(posedge clk) begin 
+   
+   if (reset) begin 
+      bias_bit_n = 0;
+      Agre_prediction = 0;
+      fallos_Agree = 0;
+      mux_out = 0;
+      end  
+   else begin bias_bit_n = ~bias_bit;
+
+    mux_out = pht_prediction ? bias_bit : bias_bit_n;
+    
+    end
+  end
+
+
+always @(posedge branch) begin
+    Agre_prediction = mux_out;
+end
+
+endmodule    
